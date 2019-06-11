@@ -1,0 +1,176 @@
+#!/bin/bash
+
+#
+# Copyright (C) 2007 John Bergbom
+#
+
+### BEGIN INIT INFO
+# Provides:          custom firewall
+# Required-Start:    $remote_fs $syslog $network
+# Required-Stop:     $remote_fs $syslog $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: firewall initscript
+# Description:       Custom Firewall
+### END INIT INFO
+
+IPTABLES="/sbin/iptables"
+IP6TABLES="/sbin/ip6tables"
+
+#function stop_firewall(IPVER) {
+function stop_firewall() {
+  IPVER=$1
+
+  #flush (delete) all rules
+  $IPVER -F
+  $IPVER -t nat -F
+  $IPVER -t mangle -F
+  $IPVER -t raw -F
+
+  #delete all chains except for the built in ones
+  $IPVER -X
+  $IPVER -t nat -X
+  $IPVER -t mangle -X
+  $IPVER -t raw -X
+
+  #set the default policies to accept
+  $IPVER -P INPUT ACCEPT
+  $IPVER -P OUTPUT ACCEPT
+  $IPVER -P FORWARD ACCEPT
+  $IPVER -t nat -P PREROUTING ACCEPT
+  $IPVER -t nat -P POSTROUTING ACCEPT
+  $IPVER -t nat -P OUTPUT ACCEPT
+  $IPVER -t mangle -P PREROUTING ACCEPT
+  $IPVER -t mangle -P OUTPUT ACCEPT
+  $IPVER -t mangle -P FORWARD ACCEPT
+  $IPVER -t mangle -P INPUT ACCEPT
+  $IPVER -t mangle -P POSTROUTING ACCEPT
+}
+
+#function start_firewall(IPVER) {
+function start_firewall() {
+  IPVER=$1
+
+  #flush (delete) all rules
+  $IPVER -F
+  $IPVER -t nat -F
+  $IPVER -t mangle -F
+  $IPVER -t raw -F
+
+  #delete all chains except for the built in ones
+  $IPVER -X
+  $IPVER -t nat -X
+  $IPVER -t mangle -X
+  $IPVER -t raw -X
+
+  #Allow outgoing packets by default, and block incoming packets
+  #as well as packets destined for other networks by default
+  $IPVER -P INPUT DROP
+  $IPVER -P OUTPUT ACCEPT
+  $IPVER -P FORWARD DROP
+
+  #Create a new chain for trusted ip's:
+  $IPVER -N ACCEPT_TRUSTED
+
+  # Create a new chain for the firewall puncher:
+  $IPVER -N FWPUNCHER
+
+  #Create a new chain for beef access:
+  #$IPVER -N ACCEPT_BEEF
+
+  # Accept everything from homeoffice in order
+  # to be able to run browser_autopwn.
+  #$IPVER -A INPUT -p tcp -s homeoffice -j ACCEPT
+
+  #Add ip's for the trusted chain:
+  if [ "$IPVER" == "/sbin/iptables" ]; then
+    $IPVER -A ACCEPT_TRUSTED -s some_trusted_host -j ACCEPT         # some trusted host
+  elif [ "$IPVER" == "/sbin/ip6tables" ]; then
+    $IPVER -A ACCEPT_TRUSTED -s some_trusted_ipv6_host -j ACCEPT    # some trusted ipv6 host
+  fi
+
+
+  # Accept ssh from trusted connections
+  #$IPVER -A INPUT -p tcp --dport ssh -j ACCEPT_TRUSTED
+
+  # Send ssh connection attempts to the firewall puncher chain:
+  #$IPVER -A INPUT -p tcp --destination-port ssh --syn -j FWPUNCHER
+
+  # Accept ssh from anywhere
+  $IPVER -A INPUT -p tcp --dport ssh -j ACCEPT
+
+  # Accept ftp from anywhere (this is just a temporary test for the VPN pentesting)
+  #$IPVER -A INPUT -p tcp --dport ftp -j ACCEPT
+
+  # Things needed for metasploit's autopwn:
+  #$IPVER -A INPUT -p tcp --dport 8080 -j ACCEPT_TRUSTED
+  #$IPVER -A INPUT -p tcp --dport 3333 -j ACCEPT_TRUSTED
+  #$IPVER -A INPUT -p tcp --dport 6666 -j ACCEPT_TRUSTED
+  #$IPVER -A INPUT -p tcp --dport 7777 -j ACCEPT_TRUSTED
+
+  # Send connection attempts to port 3000 to the beef chain:
+  #$IPVER -A INPUT -p tcp --dport 3000 -j ACCEPT_BEEF
+
+  # Accept beef from certain connections
+  #$IPVER -A ACCEPT_BEEF -s some_trusted_host1 -j ACCEPT      # some_trusted_host1
+  #$IPVER -A ACCEPT_BEEF -s some_trusted host2 -j ACCEPT      # some_trusted_host2
+
+  #Accept http and https traffic from anywhere
+  $IPVER -A INPUT -p tcp --dport www -j ACCEPT
+  $IPVER -A INPUT -p tcp --dport 443 -j ACCEPT
+
+  # Test for running nmap against oneself
+  #$IPVER -A INPUT -p tcp --dport 5001 -j ACCEPT
+
+  #Accept postgresql traffic from trusted connections
+  #$IPVER -A INPUT -p tcp --dport postgresql -j ACCEPT_TRUSTED
+
+  #Accept postgresql traffic from homeoffice
+  #$IPVER -A INPUT -s homeoffice -p tcp --dport 5433 -j ACCEPT
+
+  #Accept DNS queries from anywhere
+  $IPVER -A INPUT -p udp --dport domain -j ACCEPT
+  $IPVER -A INPUT -p tcp --dport domain -j ACCEPT
+
+  #Accept packets related to incoming connections
+  $IPVER -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+  #Accept ping requests from anywhere
+  $IPVER -A INPUT -p icmp -j ACCEPT
+
+  #Accept traffic originating from localhost
+  $IPVER -A INPUT -i lo -j ACCEPT
+
+  #Accept smtp traffic from anywhere
+  #$IPVER -A INPUT -p tcp --dport smtp -j ACCEPT
+
+  #Accept imap over ssl from anywhere
+  #$IPVER -A INPUT -p tcp --dport imaps -j ACCEPT
+
+  # Reject everything else
+  #$IPVER -A INPUT -j REJECT
+  $IPVER -A INPUT -j DROP
+}
+
+
+case "$1" in
+start|restart|force-reload)
+  echo -n Starting firewall...
+  stop_firewall "$IPTABLES"
+  stop_firewall "$IP6TABLES"
+  start_firewall "$IPTABLES"
+  start_firewall "$IP6TABLES"
+  echo "done"
+
+  ;;
+stop)
+  echo -n Stopping firewall...
+  stop_firewall "$IPTABLES"
+  stop_firewall "$IP6TABLES"
+  echo "done"
+
+  ;;
+*)
+  echo "usage: $0 (start|stop|restart|force-reload)"
+esac
+
