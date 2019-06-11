@@ -1,2 +1,2 @@
 # security
-Some personal stuff related to security
+Some personal stuff related to computer security
