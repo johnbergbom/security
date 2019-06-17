@@ -1,0 +1,3 @@
+hole.db.file=/tmp/holes.db
+lockfile=/tmp/fwpuncher.lck
+iptables.binary=/sbin/iptables
